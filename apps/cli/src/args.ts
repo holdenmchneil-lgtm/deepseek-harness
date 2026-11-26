@@ -57,8 +57,20 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Profile management subcommands. */
+type ProfileManagementSubcommand = 'list' | 'create' | 'use'
+
+/** Manage profiles: list, create, use. */
+interface ProfileManagementInvocation {
+  mode: 'profile-management'
+  subcommand: ProfileManagementSubcommand
+  profile?: string
+  /** Shipped template for create subcommand. */
+  fromDefaultProfile?: string
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | DumpConfigSchemaInvocation | PluginInvocation
+export type DshInvocation = ProfileInvocation | DumpConfigInvocation | DumpConfigSchemaInvocation | PluginInvocation | ProfileManagementInvocation
 
 /** Launcher flags for profile boot and configuration dumps. */
 interface BootOptions {
@@ -97,6 +109,11 @@ Examples:
   dsh tui --resume <session>                arguments after the launcher flags reach the app
   dsh web --help                            the web app's own flags and help
   dsh plugin --profile tui add <package>    install a plugin into the tui profile
+  dsh profile list                          list all profiles
+  dsh profile create test-profile           create a new profile
+  dsh profile create test-profile --from-default-profile web
+                                            create a profile from the web template
+  dsh profile use test-profile              switch to a profile
 `
 
 /**
@@ -202,8 +219,39 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
       })
   }
 
+  if (first === 'profile') {
+    const profileCmd = program.command('profile').description('manage profiles: list, create, use')
+    profileCmd
+      .helpOption('-h, --help', 'show this help')
+      .allowUnknownOption()
+
+    const list = profileCmd.command('list').description('list all profiles')
+    list
+      .helpOption('-h, --help', 'show this help')
+      .action(() => {
+        resolved = { mode: 'profile-management', subcommand: 'list' }
+      })
+
+    const create = profileCmd.command('create <name>').description('create a new profile')
+    create
+      .helpOption('-h, --help', 'show this help')
+      .option('--from-default-profile <name>', 'create from a shipped profile template')
+      .action((name: string, options: { fromDefaultProfile?: string }) => {
+        if (name === '') program.error('error: profile create needs a name')
+        resolved = { mode: 'profile-management', subcommand: 'create', profile: name, fromDefaultProfile: options.fromDefaultProfile }
+      })
+
+    const use = profileCmd.command('use <name>').description('switch to a profile')
+    use
+      .helpOption('-h, --help', 'show this help')
+      .action((name: string) => {
+        if (name === '') program.error('error: profile use needs a name')
+        resolved = { mode: 'profile-management', subcommand: 'use', profile: name }
+      })
+  }
+
   try {
-    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin'
+    const expanded = first !== undefined && !first.startsWith('-') && first !== 'plugin' && first !== 'profile'
       ? ['--profile', ...argv]
       : argv
     program.parse(expanded, { from: 'user' })
